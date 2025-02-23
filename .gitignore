@@ -1,0 +1,65 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env
+*.env
+.venv/
+
+# Logs
+logs/
+*.log
+
+# FastAPI-related
+instance/
+uploads/
+media/
+staticfiles/
+
+# OS / Editor specific files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Python dependency files
+Pipfile
+Pipfile.lock
+poetry.lock
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Ignore model and image files
+*.h5
+*.pkl
+*.onnx
+*.tflite
+*.weights
+*.pth
+*.ckpt
+*.t7
+
+# Ignore uploaded images and output files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.svg
+*.webp
+
+# Ignore cache files
+__pycache__/
+.cache/
+*.cache
+
+# Ignore test and temporary files
+tests/__pycache__/
+temp/
+tmp/
