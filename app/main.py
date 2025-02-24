@@ -25,17 +25,18 @@ async def root():
 @app.post("/process-image")
 async def process_image(file: UploadFile = File(...), STATIC_DIR="./static"):
     temp_image_path = os.path.join(STATIC_DIR, file.filename)
+
+    # Save uploaded image temporarily
     with open(temp_image_path, "wb") as buffer:
         buffer.write(await file.read())
 
+    # Process the image
     roi_path, heatmap_path = extract_roi_and_heatmap(temp_image_path)
 
-    os.remove(temp_image_path)  # Delete the uploaded image after processing
+    # Remove the uploaded image after processing
+    os.remove(temp_image_path)
 
     if roi_path is None:
         return JSONResponse(content={"error": "No tumor detected"}, status_code=404)
 
-    return JSONResponse(content={
-        "roi_path": roi_path,
-        "heatmap_path": heatmap_path
-    })
+    return JSONResponse(content={"roi_path": roi_path, "heatmap_path": heatmap_path})

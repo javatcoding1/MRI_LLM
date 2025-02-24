@@ -1,23 +1,26 @@
 import cv2
 import numpy as np
-# import matplotlib.pyplot as plt
+import os
+import uuid
 
-def extract_roi_and_heatmap(image_path):
+
+def extract_roi_and_heatmap(image_path, output_dir="./static"):
     """
     Extracts the region of interest (ROI) and generates a heatmap from a grayscale MRI image.
 
     Parameters:
         image_path (str): Path to the input MRI image.
+        output_dir (str): Directory to save the processed images.
 
     Returns:
-        tuple: (roi, heatmap), where:
-            - roi (numpy.ndarray or None): Extracted tumor region, None if no tumor detected.
-            - heatmap (numpy.ndarray): Color-mapped heatmap image.
+        tuple: (roi_path, heatmap_path), where:
+            - roi_path (str or None): Path to the extracted tumor region, None if no tumor detected.
+            - heatmap_path (str): Path to the heatmap image.
     """
-    print(image_path)
+    os.makedirs(output_dir, exist_ok=True)  # Ensure the output directory exists
+
     # Load the grayscale MRI image
     mri_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-
     if mri_image is None:
         raise ValueError("Error: Image not found or unable to load.")
 
@@ -58,12 +61,19 @@ def extract_roi_and_heatmap(image_path):
             max_area = area
             max_contour = contour
 
-    roi = None
+    roi_path = None
     if max_contour is not None:
         x, y, w, h = cv2.boundingRect(max_contour)
         roi = mri_image[y:y + h, x:x + w]
 
-    return roi, jet_colored
+        # Save ROI as an image
+        roi_filename = f"roi_{uuid.uuid4().hex}.png"
+        roi_path = os.path.join(output_dir, roi_filename)
+        cv2.imwrite(roi_path, roi)
 
-# Example usage
-# roi, heatmap = extract_roi_and_heatmap('/content/brain_tumor.jpg')
+    # Save heatmap image
+    heatmap_filename = f"heatmap_{uuid.uuid4().hex}.png"
+    heatmap_path = os.path.join(output_dir, heatmap_filename)
+    cv2.imwrite(heatmap_path, jet_colored)
+
+    return roi_path, heatmap_path
