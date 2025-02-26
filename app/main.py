@@ -1,14 +1,8 @@
-import io
-import os
 
-import cv2
-import numpy as np
-from PIL import Image
 from fastapi import FastAPI, File, UploadFile
 from app.routers import analysis, prediction
-import base64
 from fastapi.responses import JSONResponse
-from app.utils.RegionOfIntrest import extract_roi_and_heatmap
+from app.utils.RegionOfIntrest import process_mri_image
 app = FastAPI(title="Medical Scan Analysis API")
 
 # Include API endpoints
@@ -23,20 +17,28 @@ async def root():
 # Try 1 : The User uploads a photo and the photo should be temporarily stored in static folder
 # Try 2 : Try Using Blob or a array.
 @app.post("/process-image")
-async def process_image(file: UploadFile = File(...), STATIC_DIR="./static"):
-    temp_image_path = os.path.join(STATIC_DIR, file.filename)
+async def process_image(file: UploadFile = File(...)):
+    """
+    Process uploaded MRI image and return ROI and heatmap as base64 encoded strings.
+    No files are stored on the server.
+    """
+    # Read file contents into memory
+    contents = await file.read()
 
-    # Save uploaded image temporarily
-    with open(temp_image_path, "wb") as buffer:
-        buffer.write(await file.read())
+    try:
+        # Process the image directly from memory
+        roi_base64, heatmap_base64 = process_mri_image(contents)
 
-    # Process the image
-    roi_path, heatmap_path = extract_roi_and_heatmap(temp_image_path)
+        response = {"heatmap": heatmap_base64,"regionofintrest": roi_base64}
 
-    # Remove the uploaded image after processing
-    os.remove(temp_image_path)
+        if roi_base64 is None:
+            response["message"] = "No tumor detected"
+            return JSONResponse(content=response, status_code=404)
 
-    if roi_path is None:
-        return JSONResponse(content={"error": "No tumor detected"}, status_code=404)
-
-    return JSONResponse(content={"roi_path": roi_path, "heatmap_path": heatmap_path})
+        response["roi"] = roi_base64
+        return JSONResponse(content=response)
+    except Exception as e:
+        return JSONResponse(
+            content={"error": str(e)},
+            status_code=500
+        )
