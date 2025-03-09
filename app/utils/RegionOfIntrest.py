@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 import base64
 
-
 def process_mri_image(image_data):
     """
     Processes an MRI image to detect tumors and generate a heatmap.
