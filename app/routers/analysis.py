@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
-from app.services.llm_service import analyze_medical_scan
+from app.services.llm_service import analyze_medical_scan_with_context
 import mimetypes
 from app.utils.ResponseParser import parse_medical_scan_result
 
@@ -16,7 +16,7 @@ async def analyze_image(file: UploadFile = File(...)):
         mime_type = mimetypes.guess_type(file.filename)[0] or "image/jpeg"
 
         # Process the image directly from memory
-        raw_result = analyze_medical_scan(contents, mime_type)
+        raw_result = analyze_medical_scan_with_context(contents, mime_type)
 
         # Convert the raw markdown-formatted result into structured JSON
         structured_result = parse_medical_scan_result(raw_result)
