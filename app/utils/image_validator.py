@@ -11,3 +11,4 @@ def is_medical_scan(image_data: bytes, gemini_result=None) -> bool:
 
     # If no result provided, assume it's valid and let the main analysis determine
     return True
+
