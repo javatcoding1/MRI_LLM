@@ -8,6 +8,7 @@ from app.utils.RegionOfIntrest import process_mri_image
 from app.services.llm_service import analyze_medical_scan_with_context
 from app.utils.ResponseParser import parse_medical_scan_result
 from app.services.classification_service import predict_tumor_from_memory
+from asyncio import gather
 
 router = APIRouter()
 
@@ -19,109 +20,79 @@ async def chat_endpoint(
         message: str = Form(...),
         images: Optional[List[UploadFile]] = File(None)
 ):
-    """
-    Unified endpoint that handles both general medical imaging questions and image analysis.
-    - If only text is provided, it responds with medical imaging knowledge
-    - If images are provided, they're analyzed and results are returned
-    - If both are provided, the images are analyzed in the context of the message
-    """
-    # Initialize response structure
     response = {
         "message": "",
         "image_analysis": []
     }
 
-    # Process images if provided
-    if images and len(images) > 0:
-        image_analysis_tasks = []
+    async def process_single_image(image):
+        contents = await image.read()
+        if not contents:
+            return None
+            
+        # Check cache first
+        cached_result = image_cache.get(contents)
+        if cached_result:
+            return {
+                "filename": image.filename,
+                "analysis": cached_result,
+                "source": "cache"
+            }
 
-        for image in images:
-            # Read file contents into memory
-            contents = await image.read()
-
-            # Skip empty files
-            if not contents:
-                continue
-
-            # Check cache first
-            cached_result = image_cache.get(contents)
-            if cached_result:
-                image_analysis_tasks.append({
+        try:
+            # Batch process ROI and heatmap
+            roi_base64, heatmap_base64 = process_mri_image(contents)
+            
+            # Batch LLM analysis
+            mime_type = mimetypes.guess_type(image.filename)[0] or "image/jpeg"
+            raw_results = analyze_medical_scan_with_context(contents, mime_type, message)
+            structured_result = parse_medical_scan_result(raw_results)
+            
+            if not is_medical_scan(contents, structured_result):
+                return {
                     "filename": image.filename,
-                    "analysis": cached_result,
-                    "source": "cache"
-                })
-                continue
-
-            # Process the image
-            try:
-                # Process ROI and heatmap
-                roi_base64, heatmap_base64 = process_mri_image(contents)
-
-                # Get LLM analysis and incorporate user message in a single API call
-                mime_type = mimetypes.guess_type(image.filename)[0] or "image/jpeg"
-                raw_result = analyze_medical_scan_with_context(contents, mime_type, message)
-                structured_result = parse_medical_scan_result(raw_result)
-
-                # Validate if it's a medical scan using the Gemini result
-                if not is_medical_scan(contents, structured_result):
-                    image_analysis_tasks.append({
-                        "filename": image.filename,
-                        "error": "The uploaded image does not appear to be a medical scan."
-                    })
-                    continue
-
-                # Extract organ type for classification
-                organ_type = structured_result.get("organ", "").strip()
-
-                # Default to Brain if organ not clearly identified
-                if not organ_type or organ_type.lower() not in ["brain", "lung", "breast"]:
-                    if "brain" in message.lower():
-                        organ_type = "Brain"
-                    elif "lung" in message.lower():
-                        organ_type = "Lung"
-                    elif "breast" in message.lower():
-                        organ_type = "Breast"
-                    else:
-                        organ_type = "Brain"  # Default
-
-                # Get tumor prediction if organ is supported
-                prediction_result = None
-                if organ_type in ["Brain", "Lung", "Breast"]:
-                    prediction_result = predict_tumor_from_memory(contents, organ_type)
-
-                # Combine results
-                analysis_result = {
-                    "llm_analysis": structured_result,
-                    "tumor_prediction": prediction_result,
-                    "heatmap": heatmap_base64,
-                    "roi": roi_base64
+                    "error": "Not a medical scan"
                 }
 
-                # Cache the result
-                image_cache.set(contents, analysis_result)
+            # Get organ type and prediction
+            organ_type = structured_result.get("organ", "").strip()
+            if not organ_type or organ_type.lower() not in ["brain", "lung", "breast"]:
+                organ_type = "Brain"  # Default
 
-                image_analysis_tasks.append({
-                    "filename": image.filename,
-                    "analysis": analysis_result,
-                    "source": "processed"
-                })
+            prediction_result = None
+            if organ_type in ["Brain", "Lung", "Breast"]:
+                prediction_result = predict_tumor_from_memory(contents, organ_type)
 
-                # Extract the response message from the LLM result if it contains an answer to the user's question
-                if message and "llm_response" in structured_result:
-                    response["message"] = structured_result["llm_response"]
+            analysis_result = {
+                "llm_analysis": structured_result,
+                "tumor_prediction": prediction_result,
+                "heatmap": heatmap_base64,
+                "roi": roi_base64
+            }
 
-            except Exception as e:
-                image_analysis_tasks.append({
-                    "filename": image.filename,
-                    "error": str(e)
-                })
+            # Cache the result
+            image_cache.set(contents, analysis_result)
 
-        response["image_analysis"] = image_analysis_tasks
+            return {
+                "filename": image.filename,
+                "analysis": analysis_result,
+                "source": "processed"
+            }
 
-    # Process text-only message if no images were provided or no response was extracted from image analysis
+        except Exception as e:
+            return {
+                "filename": image.filename,
+                "error": str(e)
+            }
+
+    if images and len(images) > 0:
+        # Process all images concurrently
+        tasks = [process_single_image(image) for image in images]
+        results = await gather(*tasks)
+        response["image_analysis"] = [r for r in results if r is not None]
+
+    # Handle text-only queries
     if message and not response["message"]:
-        # Use Gemini for general medical imaging questions
         response["message"] = analyze_medical_scan_with_context(None, None, message)
 
     return response
